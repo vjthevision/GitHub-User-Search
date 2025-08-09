@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ajaib.github.presentation.navigation.GitHubNavigation
 import com.ajaib.github.presentation.viewmodel.TestViewModel
 import com.ajaib.github.ui.theme.GitHubUserSearchTheme
 import com.ajaib.github.utils.Resource
@@ -28,7 +29,7 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    TestApiScreen()
+                    GitHubNavigation()
                 }
             }
         }

@@ -66,7 +66,7 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.02.00")
+    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -132,4 +132,8 @@ dependencies {
     kapt("androidx.room:room-compiler:2.6.1")
     // Room testing
     testImplementation("androidx.room:room-testing:2.6.1")
+
+    implementation("androidx.compose.material:material-icons-core:1.7.8")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
+
 }
