@@ -40,6 +40,7 @@ fun TestApiScreen(
     viewModel: TestViewModel = hiltViewModel()
 ) {
     val usersState by viewModel.users.collectAsStateWithLifecycle()
+    var searchQuery by remember { mutableStateOf("") }
 
     Column(
         modifier = Modifier
@@ -47,9 +48,22 @@ fun TestApiScreen(
             .padding(16.dp)
     ) {
         Text(
-            text = "GitHub API Test",
+            text = "GitHub API + Database Test",
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 16.dp)
+        )
+
+        // Search functionality
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = {
+                searchQuery = it
+                viewModel.searchUsers(it)
+            },
+            label = { Text("Search users") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
         )
 
         when (usersState) {
@@ -65,7 +79,7 @@ fun TestApiScreen(
             is Resource.Success -> {
                 val users = usersState.data ?: emptyList()
                 Text(
-                    text = "Found ${users.size} users",
+                    text = "Found ${users.size} users (cached + API)",
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
@@ -88,6 +102,12 @@ fun TestApiScreen(
                                     text = "Type: ${user.type}",
                                     style = MaterialTheme.typography.bodyMedium
                                 )
+                                user.name?.let { name ->
+                                    Text(
+                                        text = "Name: $name",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                                 Text(
                                     text = "ID: ${user.id}",
                                     style = MaterialTheme.typography.bodySmall
