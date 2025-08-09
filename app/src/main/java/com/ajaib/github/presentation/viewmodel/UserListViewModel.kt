@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.ajaib.github.domain.model.User
 import com.ajaib.github.domain.usecase.GetUsersUseCase
 import com.ajaib.github.domain.usecase.SearchUsersUseCase
+import com.ajaib.github.utils.Constants
 import com.ajaib.github.utils.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,7 +28,8 @@ class UserListViewModel @Inject constructor(
     val isRefreshing = _isRefreshing.asStateFlow()
 
     val users: StateFlow<Resource<List<User>>> = _searchQuery
-        .debounce(300)
+        .debounce(Constants.SEARCH_DELAY_MS)
+        .filter { it.length >= Constants.MIN_SEARCH_QUERY_LENGTH  }
         .distinctUntilChanged()
         .flatMapLatest { query ->
             if (query.isEmpty()) {

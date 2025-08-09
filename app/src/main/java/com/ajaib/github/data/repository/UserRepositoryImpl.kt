@@ -7,7 +7,14 @@ import com.ajaib.github.data.remote.api.GitHubApiService
 import com.ajaib.github.domain.model.Repository
 import com.ajaib.github.domain.model.User
 import com.ajaib.github.domain.repository.UserRepository
+import com.ajaib.github.utils.Constants.CACHE_TIMEOUT_MS
+import com.ajaib.github.utils.Constants.DEFAULT_PAGE_SIZE
+import com.ajaib.github.utils.Constants.FIRST_PAGE
+import com.ajaib.github.utils.Constants.MAX_REQUESTS_PER_HOUR
+import com.ajaib.github.utils.Constants.MIN_SEARCH_QUERY_LENGTH
 import com.ajaib.github.utils.Resource
+import com.ajaib.github.utils.Constants.RATE_LIMIT_RESET_TIME_MS
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.first
@@ -23,46 +30,77 @@ class UserRepositoryImpl @Inject constructor(
     private val repositoryDao: RepositoryDao
 ) : UserRepository {
 
+    private var lastUserFetchTime = 0L
+    private var requestCount = 0
+    private var requestWindowStart = System.currentTimeMillis()
+
+    private suspend fun checkRateLimit() {
+        val now = System.currentTimeMillis()
+        if (now - requestWindowStart >= RATE_LIMIT_RESET_TIME_MS) {
+            requestCount = 0
+            requestWindowStart = now
+        }
+        if (requestCount >= MAX_REQUESTS_PER_HOUR) {
+            val waitTime = RATE_LIMIT_RESET_TIME_MS - (now - requestWindowStart)
+            delay(waitTime)
+            requestCount = 0
+            requestWindowStart = System.currentTimeMillis()
+        }
+        requestCount++
+    }
+
     override fun getUsers(): Flow<Resource<List<User>>> = flow {
         emit(Resource.Loading())
 
         // First, emit cached data if available
         val localUsers = userDao.getAllUsers().first()
-        if (localUsers.isNotEmpty()) {
+        val now = System.currentTimeMillis()
+        val cacheExpired = (now - lastUserFetchTime) > CACHE_TIMEOUT_MS
+
+        if (localUsers.isNotEmpty() && !cacheExpired) {
             emit(Resource.Success(localUsers.map { it.toUser() }))
+            return@flow
         }
 
         try {
-            val remoteUsers = api.getUsers()
+            checkRateLimit()
+            val remoteUsers = api.getUsers(perPage = DEFAULT_PAGE_SIZE, since = FIRST_PAGE)
             val userEntities = remoteUsers.map { it.toUserEntity() }
             userDao.insertUsers(userEntities)
-
-            // Emit fresh data
-            val updatedUsers = userDao.getAllUsers().first()
-            emit(Resource.Success(updatedUsers.map { it.toUser() }))
-
+            lastUserFetchTime = now
+            emit(Resource.Success(userEntities.map { it.toUser() }))
         } catch (e: HttpException) {
-            emit(Resource.Error(
-                message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                data = localUsers.map { it.toUser() }
-            ))
+            emit(
+                Resource.Error(
+                    message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                    data = localUsers.map { it.toUser() }
+                )
+            )
         } catch (e: IOException) {
-            emit(Resource.Error(
-                message = "Network Error: ${e.localizedMessage ?: "Check your internet connection"}",
-                data = localUsers.map { it.toUser() }
-            ))
+            emit(
+                Resource.Error(
+                    message = "Network Error: ${e.localizedMessage ?: "Check your internet connection"}",
+                    data = localUsers.map { it.toUser() }
+                )
+            )
         } catch (e: Exception) {
-            emit(Resource.Error(
-                message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                data = localUsers.map { it.toUser() }
-            ))
+            emit(
+                Resource.Error(
+                    message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                    data = localUsers.map { it.toUser() }
+                )
+            )
         }
     }
 
     override fun searchUsers(query: String): Flow<Resource<List<User>>> = flow {
         emit(Resource.Loading())
 
-        // First, search in local database
+        if (query.length < MIN_SEARCH_QUERY_LENGTH) {
+            emit(Resource.Success(emptyList()))
+            return@flow
+        }
+
         val localUsers = userDao.searchUsers(query).first()
         if (localUsers.isNotEmpty()) {
             emit(Resource.Success(localUsers.map { it.toUser() }))
@@ -74,7 +112,8 @@ class UserRepositoryImpl @Inject constructor(
         }
 
         try {
-            val remoteUsers = api.searchUsers(query)
+            checkRateLimit()
+            val remoteUsers = api.searchUsers(query, perPage = DEFAULT_PAGE_SIZE)
             val userEntities = remoteUsers.items.map { it.toUserEntity() }
             userDao.insertUsers(userEntities)
 
@@ -84,29 +123,39 @@ class UserRepositoryImpl @Inject constructor(
 
         } catch (e: HttpException) {
             when (e.code()) {
-                403 -> emit(Resource.Error(
-                    message = "Rate limit exceeded. Please try again later.",
-                    data = localUsers.map { it.toUser() }
-                ))
-                422 -> emit(Resource.Error(
-                    message = "Search query validation failed.",
-                    data = localUsers.map { it.toUser() }
-                ))
-                else -> emit(Resource.Error(
-                    message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                    data = localUsers.map { it.toUser() }
-                ))
+                403 -> emit(
+                    Resource.Error(
+                        message = "Rate limit exceeded. Please try again later.",
+                        data = localUsers.map { it.toUser() }
+                    )
+                )
+                422 -> emit(
+                    Resource.Error(
+                        message = "Search query validation failed.",
+                        data = localUsers.map { it.toUser() }
+                    )
+                )
+                else -> emit(
+                    Resource.Error(
+                        message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                        data = localUsers.map { it.toUser() }
+                    )
+                )
             }
         } catch (e: IOException) {
-            emit(Resource.Error(
-                message = "Network Error: Check your internet connection",
-                data = localUsers.map { it.toUser() }
-            ))
+            emit(
+                Resource.Error(
+                    message = "Network Error: Check your internet connection",
+                    data = localUsers.map { it.toUser() }
+                )
+            )
         } catch (e: Exception) {
-            emit(Resource.Error(
-                message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                data = localUsers.map { it.toUser() }
-            ))
+            emit(
+                Resource.Error(
+                    message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                    data = localUsers.map { it.toUser() }
+                )
+            )
         }
     }
 
@@ -120,6 +169,7 @@ class UserRepositoryImpl @Inject constructor(
         }
 
         try {
+            checkRateLimit()
             val remoteUser = api.getUser(username)
             val userEntity = remoteUser.toUserEntity()
             userDao.insertUser(userEntity)
@@ -132,25 +182,33 @@ class UserRepositoryImpl @Inject constructor(
 
         } catch (e: HttpException) {
             when (e.code()) {
-                404 -> emit(Resource.Error(
-                    message = "User not found",
-                    data = localUser?.toUser()
-                ))
-                else -> emit(Resource.Error(
-                    message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                    data = localUser?.toUser()
-                ))
+                404 -> emit(
+                    Resource.Error(
+                        message = "User not found",
+                        data = localUser?.toUser()
+                    )
+                )
+                else -> emit(
+                    Resource.Error(
+                        message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                        data = localUser?.toUser()
+                    )
+                )
             }
         } catch (e: IOException) {
-            emit(Resource.Error(
-                message = "Network Error: Check your internet connection",
-                data = localUser?.toUser()
-            ))
+            emit(
+                Resource.Error(
+                    message = "Network Error: Check your internet connection",
+                    data = localUser?.toUser()
+                )
+            )
         } catch (e: Exception) {
-            emit(Resource.Error(
-                message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                data = localUser?.toUser()
-            ))
+            emit(
+                Resource.Error(
+                    message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                    data = localUser?.toUser()
+                )
+            )
         }
     }
 
@@ -164,6 +222,7 @@ class UserRepositoryImpl @Inject constructor(
         }
 
         try {
+            checkRateLimit()
             val remoteRepos = api.getUserRepositories(username)
             val repoEntities = remoteRepos.map {
                 it.toRepositoryEntity(username)
@@ -179,51 +238,62 @@ class UserRepositoryImpl @Inject constructor(
 
         } catch (e: HttpException) {
             when (e.code()) {
-                404 -> emit(Resource.Error(
-                    message = "User repositories not found",
-                    data = localRepos.map { it.toRepository() }
-                ))
-                else -> emit(Resource.Error(
-                    message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                    data = localRepos.map { it.toRepository() }
-                ))
+                404 -> emit(
+                    Resource.Error(
+                        message = "User repositories not found",
+                        data = localRepos.map { it.toRepository() }
+                    )
+                )
+                else -> emit(
+                    Resource.Error(
+                        message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                        data = localRepos.map { it.toRepository() }
+                    )
+                )
             }
         } catch (e: IOException) {
-            emit(Resource.Error(
-                message = "Network Error: Check your internet connection",
-                data = localRepos.map { it.toRepository() }
-            ))
+            emit(
+                Resource.Error(
+                    message = "Network Error: Check your internet connection",
+                    data = localRepos.map { it.toRepository() }
+                )
+            )
         } catch (e: Exception) {
-            emit(Resource.Error(
-                message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
-                data = localRepos.map { it.toRepository() }
-            ))
+            emit(
+                Resource.Error(
+                    message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",
+                    data = localRepos.map { it.toRepository() }
+                )
+            )
         }
     }
 
     override suspend fun refreshUsers() {
         try {
-            val remoteUsers = api.getUsers()
+            checkRateLimit()
+            val remoteUsers = api.getUsers(perPage = DEFAULT_PAGE_SIZE, since = FIRST_PAGE)
             val userEntities = remoteUsers.map { it.toUserEntity() }
             userDao.deleteAllUsers()
             userDao.insertUsers(userEntities)
         } catch (e: Exception) {
-            // Handle refresh error silently or emit to a separate error channel
+            android.util.Log.e("UserRepositoryImpl","${e.localizedMessage}")
         }
     }
 
     override suspend fun refreshUserDetails(username: String) {
         try {
+            checkRateLimit()
             val remoteUser = api.getUser(username)
             val userEntity = remoteUser.toUserEntity()
             userDao.insertUser(userEntity)
         } catch (e: Exception) {
-            // Handle refresh error silently or emit to a separate error channel
+            android.util.Log.e("UserRepositoryImpl","${e.localizedMessage}")
         }
     }
 
     override suspend fun refreshUserRepositories(username: String) {
         try {
+            checkRateLimit()
             val remoteRepos = api.getUserRepositories(username)
             val repoEntities = remoteRepos.map {
                 it.toRepositoryEntity(username)
@@ -231,7 +301,7 @@ class UserRepositoryImpl @Inject constructor(
             repositoryDao.deleteRepositoriesByOwner(username)
             repositoryDao.insertRepositories(repoEntities)
         } catch (e: Exception) {
-            // Handle refresh error silently or emit to a separate error channel
+            android.util.Log.e("UserRepositoryImpl","${e.localizedMessage}")
         }
     }
 }
