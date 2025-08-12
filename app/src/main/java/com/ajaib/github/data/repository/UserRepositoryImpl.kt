@@ -1,5 +1,6 @@
 package com.ajaib.github.data.repository
 
+import android.util.Log
 import com.ajaib.github.data.local.dao.RepositoryDao
 import com.ajaib.github.data.local.dao.UserDao
 import com.ajaib.github.data.mappers.*
@@ -30,7 +31,7 @@ class UserRepositoryImpl @Inject constructor(
     private val repositoryDao: RepositoryDao
 ) : UserRepository {
 
-    private var lastUserFetchTime = 0L
+    var lastUserFetchTime = 0L
     private var requestCount = 0
     private var requestWindowStart = System.currentTimeMillis()
 
@@ -50,26 +51,37 @@ class UserRepositoryImpl @Inject constructor(
     }
 
     override fun getUsers(): Flow<Resource<List<User>>> = flow {
+        Log.d("UserRepository", "DEBUG: Emitting Loading state...")
         emit(Resource.Loading())
 
-        // First, emit cached data if available
         val localUsers = userDao.getAllUsers().first()
+        Log.d("UserRepository", "DEBUG: Local DB returned ${localUsers.size} users")
+
         val now = System.currentTimeMillis()
         val cacheExpired = (now - lastUserFetchTime) > CACHE_TIMEOUT_MS
+        Log.d(
+            "UserRepository",
+            "DEBUG: CacheExpired=$cacheExpired, lastFetch=$lastUserFetchTime, now=$now"
+        )
 
         if (localUsers.isNotEmpty() && !cacheExpired) {
+            Log.d("UserRepository", "DEBUG: Emitting SUCCESS from cache")
             emit(Resource.Success(localUsers.map { it.toUser() }))
             return@flow
         }
 
         try {
+            Log.d("UserRepository", "DEBUG: Fetching from API...")
             checkRateLimit()
-            val remoteUsers = api.getUsers(perPage = DEFAULT_PAGE_SIZE, since = FIRST_PAGE)
+            val remoteUsers = api.getUsers(perPage = DEFAULT_PAGE_SIZE, since = 0)
+            Log.d("UserRepository", "DEBUG: API returned ${remoteUsers.size} users")
             val userEntities = remoteUsers.map { it.toUserEntity() }
             userDao.insertUsers(userEntities)
             lastUserFetchTime = now
+            Log.d("UserRepository", "DEBUG: Emitting SUCCESS from API data")
             emit(Resource.Success(userEntities.map { it.toUser() }))
         } catch (e: HttpException) {
+            Log.e("UserRepository", "HTTP Error: ${e.localizedMessage}")
             emit(
                 Resource.Error(
                     message = "HTTP Error: ${e.localizedMessage ?: "Unknown error occurred"}",
@@ -77,6 +89,7 @@ class UserRepositoryImpl @Inject constructor(
                 )
             )
         } catch (e: IOException) {
+            Log.e("UserRepository", "Network Error: ${e.localizedMessage}")
             emit(
                 Resource.Error(
                     message = "Network Error: ${e.localizedMessage ?: "Check your internet connection"}",
@@ -84,6 +97,7 @@ class UserRepositoryImpl @Inject constructor(
                 )
             )
         } catch (e: Exception) {
+            Log.e("UserRepository", "Error: ${e.localizedMessage}")
             emit(
                 Resource.Error(
                     message = "Error: ${e.localizedMessage ?: "Unknown error occurred"}",

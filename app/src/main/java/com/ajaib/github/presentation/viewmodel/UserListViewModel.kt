@@ -29,7 +29,7 @@ class UserListViewModel @Inject constructor(
 
     val users: StateFlow<Resource<List<User>>> = _searchQuery
         .debounce(Constants.SEARCH_DELAY_MS)
-        .filter { it.length >= Constants.MIN_SEARCH_QUERY_LENGTH  }
+        .filter { it.length >= 0  }
         .distinctUntilChanged()
         .flatMapLatest { query ->
             if (query.isEmpty()) {

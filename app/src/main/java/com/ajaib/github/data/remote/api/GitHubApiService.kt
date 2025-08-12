@@ -7,16 +7,19 @@ import com.ajaib.github.utils.Constants
 import retrofit2.http.GET
 import retrofit2.http.Path
 import retrofit2.http.Query
+import java.io.IOException
 
 interface GitHubApiService {
 
     @GET("users")
+    @Throws(IOException::class)
     suspend fun getUsers(
         @Query("since") since: Int = 0,
         @Query("per_page") perPage: Int = Constants.DEFAULT_PAGE_SIZE
     ): List<UserDto>
 
     @GET("search/users")
+    @Throws(IOException::class)
     suspend fun searchUsers(
         @Query("q") query: String,
         @Query("page") page: Int = Constants.FIRST_PAGE,
@@ -24,11 +27,13 @@ interface GitHubApiService {
     ): SearchUsersResponse
 
     @GET("users/{username}")
+    @Throws(IOException::class)
     suspend fun getUser(
         @Path("username") username: String
     ): UserDto
 
     @GET("users/{username}/repos")
+    @Throws(IOException::class)
     suspend fun getUserRepositories(
         @Path("username") username: String,
         @Query("page") page: Int = Constants.FIRST_PAGE,

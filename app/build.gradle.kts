@@ -35,12 +35,12 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
     }
 
     buildFeatures {
@@ -107,6 +107,7 @@ dependencies {
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("com.google.dagger:hilt-android-testing:2.48.1")
+    androidTestImplementation("androidx.arch.core:core-testing:2.2.0")
     kaptAndroidTest("com.google.dagger:hilt-android-compiler:2.48.1")
 
     // Debug
@@ -125,6 +126,7 @@ dependencies {
 
     // For MockWebServer in testing
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
+    androidTestImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 
     // Room Database
     implementation("androidx.room:room-runtime:2.6.1")
@@ -135,5 +137,19 @@ dependencies {
 
     implementation("androidx.compose.material:material-icons-core:1.7.8")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
+
+    // Unit Testing
+    testImplementation("org.mockito:mockito-android:5.8.0")
+    testImplementation("org.mockito:mockito-inline:5.2.0")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
+    testImplementation("app.cash.turbine:turbine:0.13.0")
+
+    // UI Testing with Compose
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
+    androidTestImplementation("androidx.navigation:navigation-testing:2.7.6")
+    androidTestImplementation("org.mockito:mockito-android:5.8.0")
+    androidTestImplementation("app.cash.turbine:turbine:0.13.0")
+    androidTestImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
 
 }
